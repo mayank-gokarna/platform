@@ -1,0 +1,13 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.venv
+venv
+.env*
+tests/
+requirements-dev.txt
+*.log
+.dockerignore
+Dockerfile
+sample-app/grafana/
