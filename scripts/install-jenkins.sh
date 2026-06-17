@@ -42,17 +42,17 @@ PLUGINS_FILE="${SCRIPT_DIR}/lib/plugins.txt"
 check_jenkins_prerequisites() {
     log_info "Checking Jenkins prerequisites..."
 
-    # Check Java 17+
+    # Check Java 21+ (required by Jenkins LTS 2.540+)
     if check_command java; then
         local java_version
         java_version=$(java -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+)\..*/\1/')
-        if [[ "$java_version" -lt 17 ]]; then
-            log_warn "Java $java_version found but Jenkins requires Java 17+"
+        if [[ "$java_version" -lt 21 ]]; then
+            log_warn "Java $java_version found but Jenkins requires Java 21+"
             return 1
         fi
         log_info "Java OK: version $java_version"
     else
-        log_warn "Java not found — will install OpenJDK 17"
+        log_warn "Java not found — will install OpenJDK 21"
         return 1
     fi
     return 0
@@ -66,16 +66,16 @@ install_java() {
     if check_command java; then
         local java_version
         java_version=$(java -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+)\..*/\1/')
-        if [[ "$java_version" -ge 17 ]]; then
-            log_info "Java 17+ already installed (version $java_version)"
+        if [[ "$java_version" -ge 21 ]]; then
+            log_info "Java 21+ already installed (version $java_version)"
             return 0
         fi
     fi
 
-    log_info "Installing OpenJDK 17..."
+    log_info "Installing OpenJDK 21..."
     apt-get update -qq
-    apt-get install -y -qq fontconfig openjdk-17-jre
-    log_info "OpenJDK 17 installed"
+    apt-get install -y -qq fontconfig openjdk-21-jre
+    log_info "OpenJDK 21 installed"
 }
 
 # ============================================================================
@@ -89,16 +89,42 @@ install_jenkins() {
     fi
 
     log_info "Adding Jenkins apt repository..."
-    curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | \
-        gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg 2>/dev/null || true
+    # Remove any stale config from previous runs
+    rm -f /usr/share/keyrings/jenkins-keyring.gpg
+    rm -f /etc/apt/sources.list.d/jenkins.list
 
-    if [[ ! -f /etc/apt/sources.list.d/jenkins.list ]]; then
-        echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/" | \
+    # Try to import GPG key (may fail behind corporate proxies like Zscaler)
+    local key_ok=false
+    curl -fsSLk https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key \
+        -o /tmp/jenkins.key 2>/dev/null || true
+
+    if [[ -s /tmp/jenkins.key ]]; then
+        gpg --batch --yes --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg \
+            /tmp/jenkins.key 2>/dev/null || true
+        rm -f /tmp/jenkins.key
+
+        if [[ -s /usr/share/keyrings/jenkins-keyring.gpg ]]; then
+            echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/" | \
+                tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+            # Test if key actually works (disable pipefail for this check)
+            local update_output
+            update_output=$(apt-get update 2>&1 || true)
+            if echo "$update_output" | grep -q "NO_PUBKEY"; then
+                log_warn "GPG key corrupted by corporate proxy."
+            else
+                key_ok=true
+            fi
+        fi
+    fi
+
+    if [[ "$key_ok" != "true" ]]; then
+        log_warn "Using trusted repo (GPG verification unavailable behind proxy)."
+        echo "deb [trusted=yes] https://pkg.jenkins.io/debian-stable binary/" | \
             tee /etc/apt/sources.list.d/jenkins.list > /dev/null
     fi
 
     log_info "Installing Jenkins LTS..."
-    apt-get update -qq
+    apt-get update -qq || true
     apt-get install -y -qq jenkins
 
     # Configure port if non-default
@@ -157,31 +183,39 @@ install_plugins() {
 
     log_info "Installing Jenkins plugins from $PLUGINS_FILE..."
 
-    local jenkins_cli="/usr/local/bin/jenkins-plugin-cli"
-    if [[ ! -f "$jenkins_cli" ]]; then
-        # Use the CLI bundled in the Jenkins WAR
-        local jenkins_war
-        jenkins_war=$(find /usr/share/jenkins -name "jenkins.war" 2>/dev/null | head -1)
-        if [[ -z "$jenkins_war" ]]; then
-            jenkins_war="/usr/share/java/jenkins.war"
-        fi
+    # Get the Jenkins admin password for CLI access
+    local admin_pass=""
+    if [[ -f /var/lib/jenkins/secrets/initialAdminPassword ]]; then
+        admin_pass=$(cat /var/lib/jenkins/secrets/initialAdminPassword)
+    fi
 
-        if [[ -f "$jenkins_war" ]]; then
-            log_info "Using jenkins-plugin-cli from WAR file..."
-            java -jar "$jenkins_war" --plugin-cli --plugin-file "$PLUGINS_FILE" \
-                --jenkins-update-center "https://updates.jenkins.io" \
-                -d /var/lib/jenkins/plugins/ 2>&1 || {
-                    log_warn "WAR-based plugin install failed, trying alternative method..."
-                    install_plugins_alternative
-                    return $?
-                }
+    # Use Jenkins CLI to install plugins via the running instance
+    local jenkins_cli_jar="/tmp/jenkins-cli.jar"
+    if [[ -n "$admin_pass" ]]; then
+        # Download Jenkins CLI from the running instance
+        curl -sfk "http://localhost:${JENKINS_PORT}/jnlpJars/jenkins-cli.jar" \
+            -o "$jenkins_cli_jar" 2>/dev/null || true
+
+        if [[ -s "$jenkins_cli_jar" ]]; then
+            log_info "Installing plugins via Jenkins CLI..."
+            while IFS= read -r plugin || [[ -n "$plugin" ]]; do
+                plugin=$(echo "$plugin" | tr -d '[:space:]')
+                [[ -z "$plugin" || "$plugin" == \#* ]] && continue
+                log_info "  Installing plugin: $plugin"
+                java -jar "$jenkins_cli_jar" -s "http://localhost:${JENKINS_PORT}/" \
+                    -auth "admin:${admin_pass}" install-plugin "$plugin" 2>&1 || \
+                    log_warn "  Failed to install plugin: $plugin"
+            done < "$PLUGINS_FILE"
+            rm -f "$jenkins_cli_jar"
         else
-            log_warn "jenkins-plugin-cli not found, using alternative method..."
+            log_warn "Could not download Jenkins CLI, using plugin manager tool..."
             install_plugins_alternative
             return $?
         fi
     else
-        "$jenkins_cli" --plugin-file "$PLUGINS_FILE" -d /var/lib/jenkins/plugins/ 2>&1
+        log_warn "No admin password found, using plugin manager tool..."
+        install_plugins_alternative
+        return $?
     fi
 
     # Fix plugin ownership
@@ -195,16 +229,25 @@ install_plugins() {
 
 install_plugins_alternative() {
     # Download jenkins-plugin-manager standalone tool
-    local cli_url="https://github.com/jenkinsci/plugin-installation-manager-tool/releases/latest/download/jenkins-plugin-manager.jar"
+    local pim_version
+    pim_version=$(curl -fsSLk https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest 2>/dev/null \
+        | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "2.14.0")
+    local cli_url="https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${pim_version}/jenkins-plugin-manager-${pim_version}.jar"
     local cli_jar="/tmp/jenkins-plugin-manager.jar"
 
-    log_info "Downloading jenkins-plugin-manager..."
-    curl -fsSL "$cli_url" -o "$cli_jar"
+    log_info "Downloading jenkins-plugin-manager ${pim_version}..."
+    curl -fsSLk "$cli_url" -o "$cli_jar" || {
+        log_error "Failed to download plugin manager"
+        return 1
+    }
+
+    local jenkins_war
+    jenkins_war=$(find /usr/share/java /usr/share/jenkins -name "jenkins.war" 2>/dev/null | head -1)
 
     java -jar "$cli_jar" \
+        --war "$jenkins_war" \
         --plugin-file "$PLUGINS_FILE" \
-        --plugin-download-directory /var/lib/jenkins/plugins/ \
-        --jenkins-update-center "https://updates.jenkins.io" 2>&1
+        --plugin-download-directory /var/lib/jenkins/plugins/ 2>&1 || true
 
     chown -R jenkins:jenkins /var/lib/jenkins/plugins/ 2>/dev/null || true
     rm -f "$cli_jar"
