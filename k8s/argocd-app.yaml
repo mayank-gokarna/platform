@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/mayank-gokarna/platform.git
-    targetRevision: HEAD
+    targetRevision: 001-jenkins-argocd-install-scripts
     path: k8s
   destination:
     server: https://kubernetes.default.svc

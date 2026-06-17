@@ -45,7 +45,7 @@ fi
 
 if ! check_command helm; then
     log_info "Helm not found — installing..."
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    curl -kfsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | VERIFY_CHECKSUM=false bash
 fi
 
 if ! kubectl cluster-info &>/dev/null 2>&1; then
@@ -88,6 +88,7 @@ install_prometheus() {
         --namespace "$NAMESPACE" \
         --set server.persistentVolume.enabled=false \
         --set alertmanager.enabled=false \
+        --set kube-state-metrics.enabled=false \
         --wait --timeout 300s
 
     log_info "Prometheus installed"

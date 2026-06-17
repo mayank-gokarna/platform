@@ -272,7 +272,3 @@ else
     wait_for_jenkins
     install_plugins
 fi
-
-log_info "Jenkins is running on port $JENKINS_PORT"
-log_info "Initial admin password: /var/lib/jenkins/secrets/initialAdminPassword"
-log_info "Access Jenkins at: http://localhost:${JENKINS_PORT}"

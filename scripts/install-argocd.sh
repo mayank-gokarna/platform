@@ -16,6 +16,7 @@ CLUSTER_NAME="platform"
 SKIP_CLUSTER=false
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT=5001
+KIND_NODE_IMAGE="kindest/node:v1.30.0"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -94,15 +95,22 @@ create_kind_cluster() {
     # Create the registry first
     create_local_registry
 
+    # Ensure iptables FORWARD is ACCEPT (required for Docker bridge networking in WSL2)
+    iptables -P FORWARD ACCEPT 2>/dev/null || true
+
     log_info "Creating kind cluster '$CLUSTER_NAME' with local registry..."
 
     # Kind cluster config with registry mirror
-    cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --config=-
+    cat <<EOF | kind create cluster --name "$CLUSTER_NAME" --image "$KIND_NODE_IMAGE" --wait 5m --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${REGISTRY_PORT}"]
+    endpoint = ["http://${REGISTRY_NAME}:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${REGISTRY_NAME}:5000"]
     endpoint = ["http://${REGISTRY_NAME}:5000"]
 EOF
 
@@ -124,6 +132,9 @@ data:
     help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
 EOF
 
+    # Export kubeconfig for current user
+    kind export kubeconfig --name "$CLUSTER_NAME" 2>/dev/null || true
+
     log_info "Kind cluster '$CLUSTER_NAME' created with local registry"
 }
 
@@ -143,9 +154,11 @@ install_argocd() {
     fi
 
     # Apply ArgoCD install manifest
-    log_info "Applying ArgoCD installation manifest..."
-    kubectl apply -n "$argocd_ns" \
-        -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    log_info "Downloading ArgoCD installation manifest..."
+    curl -kfsSL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml \
+        -o /tmp/argocd-install.yaml
+    log_info "Applying ArgoCD installation manifest (server-side apply)..."
+    kubectl apply -n "$argocd_ns" -f /tmp/argocd-install.yaml --server-side --force-conflicts
 
     # Wait for ArgoCD server to be ready
     log_info "Waiting for ArgoCD server to become ready..."
@@ -167,9 +180,9 @@ install_argocd_cli() {
 
     log_info "Installing ArgoCD CLI..."
     local argocd_version
-    argocd_version=$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    argocd_version=$(curl -kfsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
 
-    curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/${argocd_version}/argocd-linux-amd64" \
+    curl -kfsSL "https://github.com/argoproj/argo-cd/releases/download/${argocd_version}/argocd-linux-amd64" \
         -o /usr/local/bin/argocd
     chmod +x /usr/local/bin/argocd
     log_info "ArgoCD CLI installed: $argocd_version"

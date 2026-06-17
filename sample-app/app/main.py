@@ -17,10 +17,22 @@ def create_app() -> Flask:
 
     # Prometheus metrics instrumentation
     try:
-        from prometheus_flask_instrumentator import PrometheusFlaskInstrumentator
-        PrometheusFlaskInstrumentator().instrument(application)
+        from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+        REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+        REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
+
+        @application.after_request
+        def _metrics_after_request(response):
+            REQUEST_COUNT.labels(request.method, request.path, response.status_code).inc()
+            duration = time.monotonic() - getattr(request, "_start_time", time.monotonic())
+            REQUEST_LATENCY.labels(request.method, request.path).observe(duration)
+            return response
+
+        @application.route("/metrics")
+        def metrics():
+            return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
     except ImportError:
-        logger.warning("prometheus-flask-instrumentator not installed, /metrics disabled")
+        logger.warning("prometheus-client not installed, /metrics disabled")
 
     @application.before_request
     def _before_request():
