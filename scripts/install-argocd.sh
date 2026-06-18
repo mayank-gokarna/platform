@@ -106,6 +106,13 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 8888
+    protocol: TCP
+  - containerPort: 30443
+    hostPort: 8443
+    protocol: TCP
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:${REGISTRY_PORT}"]
@@ -206,8 +213,8 @@ print_access_info() {
     fi
 
     log_info "ArgoCD installed in cluster '$CLUSTER_NAME'"
-    log_info "Access ArgoCD: kubectl port-forward svc/argocd-server -n argocd 8443:443"
-    log_info "Then open: https://localhost:8443"
+    log_info "Sample App: http://localhost:8888"
+    log_info "ArgoCD UI:  https://localhost:8443"
 }
 
 # ============================================================================
