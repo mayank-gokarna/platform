@@ -3,8 +3,21 @@
 import json
 
 import pytest
+from prometheus_client import REGISTRY
 
 from app.main import create_app
+
+
+@pytest.fixture(autouse=True)
+def clear_prometheus_registry():
+    """Clear prometheus collectors between tests to avoid duplicate registration."""
+    collectors = list(REGISTRY._names_to_collectors.values())
+    for collector in collectors:
+        try:
+            REGISTRY.unregister(collector)
+        except Exception:
+            pass
+    yield
 
 
 @pytest.fixture
@@ -21,7 +34,7 @@ def test_index_returns_html(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"Sample App" in resp.data
-    assert b"1.0.0" in resp.data
+    assert b"1.1.0" in resp.data
 
 
 def test_health_returns_json(client):
@@ -30,7 +43,7 @@ def test_health_returns_json(client):
     assert resp.status_code == 200
     data = json.loads(resp.data)
     assert data["status"] == "ok"
-    assert data["version"] == "1.0.0"
+    assert data["version"] == "1.1.0"
     assert "timestamp" in data
 
 
