@@ -90,36 +90,36 @@ def create_app() -> Flask:
 
         catalog = {
             "Food": [
-                {"name": "Pizza", "img": "https://loremflickr.com/300/200/pizza,food"},
-                {"name": "Sushi", "img": "https://loremflickr.com/300/200/sushi,japanese"},
-                {"name": "Burger", "img": "https://loremflickr.com/300/200/burger,grill"},
-                {"name": "Pasta", "img": "https://loremflickr.com/300/200/pasta,italian"},
-                {"name": "Tacos", "img": "https://loremflickr.com/300/200/tacos,mexican"},
-                {"name": "Ice Cream", "img": "https://loremflickr.com/300/200/icecream,dessert"},
+                {"name": "Pizza", "emoji": "\U0001f9e5", "color": "#dc2621"},
+                {"name": "Sushi", "emoji": "\U0001f363", "color": "#0891b2"},
+                {"name": "Burger", "emoji": "\U0001f354", "color": "#d97706"},
+                {"name": "Pasta", "emoji": "\U0001f35d", "color": "#ca8a04"},
+                {"name": "Tacos", "emoji": "\U0001f32e", "color": "#16a34a"},
+                {"name": "Ice Cream", "emoji": "\U0001f366", "color": "#db2777"},
             ],
             "Movies": [
-                {"name": "Action", "img": "https://loremflickr.com/300/200/action,movie"},
-                {"name": "Comedy", "img": "https://loremflickr.com/300/200/comedy,film"},
-                {"name": "Sci-Fi", "img": "https://loremflickr.com/300/200/scifi,space"},
-                {"name": "Horror", "img": "https://loremflickr.com/300/200/horror,dark"},
-                {"name": "Drama", "img": "https://loremflickr.com/300/200/drama,theater"},
-                {"name": "Animation", "img": "https://loremflickr.com/300/200/animation,cartoon"},
+                {"name": "Action", "emoji": "\U0001f4a5", "color": "#dc2626"},
+                {"name": "Comedy", "emoji": "\U0001f602", "color": "#f59e0b"},
+                {"name": "Sci-Fi", "emoji": "\U0001f680", "color": "#6366f1"},
+                {"name": "Horror", "emoji": "\U0001f47b", "color": "#1e293b"},
+                {"name": "Drama", "emoji": "\U0001f3ad", "color": "#7c3aed"},
+                {"name": "Animation", "emoji": "\U0001f3ac", "color": "#0ea5e9"},
             ],
             "Clothes": [
-                {"name": "Jackets", "img": "https://loremflickr.com/300/200/jacket,fashion"},
-                {"name": "Sneakers", "img": "https://loremflickr.com/300/200/sneakers,shoes"},
-                {"name": "Dresses", "img": "https://loremflickr.com/300/200/dress,fashion"},
-                {"name": "Jeans", "img": "https://loremflickr.com/300/200/jeans,denim"},
-                {"name": "T-Shirts", "img": "https://loremflickr.com/300/200/tshirt,casual"},
-                {"name": "Suits", "img": "https://loremflickr.com/300/200/suit,formal"},
+                {"name": "Jackets", "emoji": "\U0001f9e5", "color": "#78350f"},
+                {"name": "Sneakers", "emoji": "\U0001f45f", "color": "#059669"},
+                {"name": "Dresses", "emoji": "\U0001f457", "color": "#e11d48"},
+                {"name": "Jeans", "emoji": "\U0001f456", "color": "#1d4ed8"},
+                {"name": "T-Shirts", "emoji": "\U0001f455", "color": "#0d9488"},
+                {"name": "Suits", "emoji": "\U0001f935", "color": "#334155"},
             ],
             "Cities": [
-                {"name": "Tokyo", "img": "https://loremflickr.com/300/200/tokyo,city"},
-                {"name": "Paris", "img": "https://loremflickr.com/300/200/paris,eiffel"},
-                {"name": "New York", "img": "https://loremflickr.com/300/200/newyork,skyline"},
-                {"name": "London", "img": "https://loremflickr.com/300/200/london,bigben"},
-                {"name": "Dubai", "img": "https://loremflickr.com/300/200/dubai,skyscraper"},
-                {"name": "Sydney", "img": "https://loremflickr.com/300/200/sydney,opera"},
+                {"name": "Tokyo", "emoji": "\U0001f5fc", "color": "#dc2626"},
+                {"name": "Paris", "emoji": "\U0001f5fc", "color": "#7c3aed"},
+                {"name": "New York", "emoji": "\U0001f5fd", "color": "#059669"},
+                {"name": "London", "emoji": "\U0001f3a1", "color": "#1d4ed8"},
+                {"name": "Dubai", "emoji": "\U0001f3d9\ufe0f", "color": "#d97706"},
+                {"name": "Sydney", "emoji": "\U0001f309", "color": "#0891b2"},
             ],
         }
 
@@ -129,7 +129,7 @@ def create_app() -> Flask:
             for item in items:
                 cards_html += f'''
               <div class="catalog-card">
-                <img src="{item['img']}" alt="{item['name']}" loading="lazy">
+                <div class="catalog-card-img" style="background:{item['color']}">{item['emoji']}</div>
                 <div class="catalog-card-name">{item['name']}</div>
               </div>'''
             sections_html += f'''
@@ -160,7 +160,7 @@ def create_app() -> Flask:
     .catalog-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }}
     .catalog-card {{ background: #1e293b; border-radius: 12px; overflow: hidden; border: 1px solid #334155; transition: transform 0.2s, border-color 0.2s; cursor: pointer; }}
     .catalog-card:hover {{ transform: translateY(-4px); border-color: #3b82f6; }}
-    .catalog-card img {{ width: 100%; height: 140px; object-fit: cover; display: block; }}
+    .catalog-card-img {{ width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; font-size: 3.5rem; }}
     .catalog-card-name {{ padding: 0.7rem; font-size: 0.9rem; font-weight: 500; text-align: center; color: #cbd5e1; }}
     .footer {{ text-align: center; padding: 2rem; color: #475569; font-size: 0.8rem; border-top: 1px solid #1e293b; }}
     .footer a {{ color: #3b82f6; text-decoration: none; }}
