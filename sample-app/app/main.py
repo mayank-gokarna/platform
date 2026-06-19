@@ -85,127 +85,117 @@ def create_app() -> Flask:
 
     @application.route("/")
     def index():
-        """Dashboard landing page."""
-        now = datetime.now(timezone.utc)
-        uptime_secs = int(time.monotonic() - APP_START_TIME)
-        uptime_str = _format_uptime(uptime_secs)
+        """Catalog landing page with sections."""
         hostname = os.environ.get("HOSTNAME", platform.node())
+
+        catalog = {
+            "Food": [
+                {"name": "Pizza", "img": "https://loremflickr.com/300/200/pizza,food"},
+                {"name": "Sushi", "img": "https://loremflickr.com/300/200/sushi,japanese"},
+                {"name": "Burger", "img": "https://loremflickr.com/300/200/burger,grill"},
+                {"name": "Pasta", "img": "https://loremflickr.com/300/200/pasta,italian"},
+                {"name": "Tacos", "img": "https://loremflickr.com/300/200/tacos,mexican"},
+                {"name": "Ice Cream", "img": "https://loremflickr.com/300/200/icecream,dessert"},
+            ],
+            "Movies": [
+                {"name": "Action", "img": "https://loremflickr.com/300/200/action,movie"},
+                {"name": "Comedy", "img": "https://loremflickr.com/300/200/comedy,film"},
+                {"name": "Sci-Fi", "img": "https://loremflickr.com/300/200/scifi,space"},
+                {"name": "Horror", "img": "https://loremflickr.com/300/200/horror,dark"},
+                {"name": "Drama", "img": "https://loremflickr.com/300/200/drama,theater"},
+                {"name": "Animation", "img": "https://loremflickr.com/300/200/animation,cartoon"},
+            ],
+            "Clothes": [
+                {"name": "Jackets", "img": "https://loremflickr.com/300/200/jacket,fashion"},
+                {"name": "Sneakers", "img": "https://loremflickr.com/300/200/sneakers,shoes"},
+                {"name": "Dresses", "img": "https://loremflickr.com/300/200/dress,fashion"},
+                {"name": "Jeans", "img": "https://loremflickr.com/300/200/jeans,denim"},
+                {"name": "T-Shirts", "img": "https://loremflickr.com/300/200/tshirt,casual"},
+                {"name": "Suits", "img": "https://loremflickr.com/300/200/suit,formal"},
+            ],
+            "Cities": [
+                {"name": "Tokyo", "img": "https://loremflickr.com/300/200/tokyo,city"},
+                {"name": "Paris", "img": "https://loremflickr.com/300/200/paris,eiffel"},
+                {"name": "New York", "img": "https://loremflickr.com/300/200/newyork,skyline"},
+                {"name": "London", "img": "https://loremflickr.com/300/200/london,bigben"},
+                {"name": "Dubai", "img": "https://loremflickr.com/300/200/dubai,skyscraper"},
+                {"name": "Sydney", "img": "https://loremflickr.com/300/200/sydney,opera"},
+            ],
+        }
+
+        sections_html = ""
+        for section, items in catalog.items():
+            cards_html = ""
+            for item in items:
+                cards_html += f'''
+              <div class="catalog-card">
+                <img src="{item['img']}" alt="{item['name']}" loading="lazy">
+                <div class="catalog-card-name">{item['name']}</div>
+              </div>'''
+            sections_html += f'''
+        <div class="section">
+          <h2 class="section-title">{section}</h2>
+          <div class="catalog-grid">{cards_html}
+          </div>
+        </div>'''
 
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Platform Sample App</title>
+  <title>Platform Catalog</title>
   <style>
-    * {{{{ margin: 0; padding: 0; box-sizing: border-box; }}}}
-    body {{{{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }}}}
-    .header {{{{ background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 2rem; border-bottom: 2px solid #3b82f6; }}}}
-    .header h1 {{{{ font-size: 1.8rem; font-weight: 700; color: #fff; }}}}
-    .header p {{{{ color: #94a3b8; margin-top: 0.3rem; }}}}
-    .container {{{{ max-width: 1000px; margin: 0 auto; padding: 2rem; }}}}
-    .cards {{{{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1.5rem 0; }}}}
-    .card {{{{ background: #1e293b; border-radius: 12px; padding: 1.2rem; border: 1px solid #334155; }}}}
-    .card .label {{{{ font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 0.3rem; }}}}
-    .card .value {{{{ font-size: 1.4rem; font-weight: 600; color: #f8fafc; }}}}
-    .card .value.green {{{{ color: #22c55e; }}}}
-    .card .value.blue {{{{ color: #3b82f6; }}}}
-    .card .value.amber {{{{ color: #f59e0b; }}}}
-    .endpoints {{{{ margin: 2rem 0; }}}}
-    .endpoints h2 {{{{ font-size: 1.2rem; margin-bottom: 1rem; color: #cbd5e1; }}}}
-    .endpoint-list {{{{ list-style: none; }}}}
-    .endpoint-list li {{{{ background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.8rem; }}}}
-    .method {{{{ background: #22c55e; color: #000; font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 4px; min-width: 40px; text-align: center; }}}}
-    .path {{{{ font-family: 'SF Mono', 'Fira Code', monospace; color: #93c5fd; }}}}
-    .desc {{{{ color: #64748b; margin-left: auto; font-size: 0.85rem; }}}}
-    .actions {{{{ margin: 2rem 0; }}}}
-    .actions h2 {{{{ font-size: 1.2rem; margin-bottom: 1rem; color: #cbd5e1; }}}}
-    .btn-row {{{{ display: flex; gap: 0.8rem; flex-wrap: wrap; }}}}
-    .btn {{{{ padding: 0.6rem 1.2rem; border-radius: 8px; border: none; font-size: 0.9rem; font-weight: 500; cursor: pointer; text-decoration: none; display: inline-block; }}}}
-    .btn-blue {{{{ background: #3b82f6; color: #fff; }}}}
-    .btn-green {{{{ background: #22c55e; color: #000; }}}}
-    .btn-amber {{{{ background: #f59e0b; color: #000; }}}}
-    .btn-red {{{{ background: #ef4444; color: #fff; }}}}
-    .btn:hover {{{{ opacity: 0.85; }}}}
-    #result {{{{ background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; min-height: 60px; color: #a5f3fc; display: none; }}}}
-    .footer {{{{ text-align: center; padding: 2rem; color: #475569; font-size: 0.8rem; }}}}
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }}
+    .header {{ background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 1.5rem 2rem; border-bottom: 2px solid #3b82f6; position: sticky; top: 0; z-index: 100; }}
+    .header h1 {{ font-size: 1.6rem; font-weight: 700; color: #fff; display: inline; }}
+    .header .version {{ color: #3b82f6; font-size: 0.85rem; margin-left: 0.8rem; }}
+    .nav {{ display: flex; gap: 1rem; margin-top: 0.8rem; flex-wrap: wrap; }}
+    .nav a {{ color: #94a3b8; text-decoration: none; font-size: 0.9rem; padding: 0.3rem 0.8rem; border-radius: 6px; transition: all 0.2s; }}
+    .nav a:hover, .nav a.active {{ color: #fff; background: #334155; }}
+    .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+    .section {{ margin-bottom: 2.5rem; }}
+    .section-title {{ font-size: 1.4rem; font-weight: 600; color: #f8fafc; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #334155; }}
+    .catalog-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }}
+    .catalog-card {{ background: #1e293b; border-radius: 12px; overflow: hidden; border: 1px solid #334155; transition: transform 0.2s, border-color 0.2s; cursor: pointer; }}
+    .catalog-card:hover {{ transform: translateY(-4px); border-color: #3b82f6; }}
+    .catalog-card img {{ width: 100%; height: 140px; object-fit: cover; display: block; }}
+    .catalog-card-name {{ padding: 0.7rem; font-size: 0.9rem; font-weight: 500; text-align: center; color: #cbd5e1; }}
+    .footer {{ text-align: center; padding: 2rem; color: #475569; font-size: 0.8rem; border-top: 1px solid #1e293b; }}
+    .footer a {{ color: #3b82f6; text-decoration: none; }}
   </style>
 </head>
 <body>
   <div class="header">
-    <div class="container" style="padding:0">
-      <h1>&#9881; Platform Sample App</h1>
-      <p>Deployed via Jenkins &bull; Managed by ArgoCD &bull; Monitored with Prometheus + Grafana</p>
+    <h1>&#128722; Platform Catalog</h1><span class="version">v{__version__}</span>
+    <div class="nav">
+      <a href="#food" class="active">Food</a>
+      <a href="#movies">Movies</a>
+      <a href="#clothes">Clothes</a>
+      <a href="#cities">Cities</a>
+      <a href="/health">Health</a>
+      <a href="/metrics">Metrics</a>
     </div>
   </div>
   <div class="container">
-    <div class="cards">
-      <div class="card">
-        <div class="label">Status</div>
-        <div class="value green">&#9679; Healthy</div>
-      </div>
-      <div class="card">
-        <div class="label">Version</div>
-        <div class="value blue">{__version__}</div>
-      </div>
-      <div class="card">
-        <div class="label">Uptime</div>
-        <div class="value amber">{uptime_str}</div>
-      </div>
-      <div class="card">
-        <div class="label">Pod</div>
-        <div class="value" style="font-size:0.9rem;color:#94a3b8">{hostname}</div>
-      </div>
-    </div>
-
-    <div class="endpoints">
-      <h2>API Endpoints</h2>
-      <ul class="endpoint-list">
-        <li><span class="method">GET</span><span class="path">/</span><span class="desc">This dashboard</span></li>
-        <li><span class="method">GET</span><span class="path">/health</span><span class="desc">Kubernetes health check</span></li>
-        <li><span class="method">GET</span><span class="path">/info</span><span class="desc">Runtime &amp; environment info</span></li>
-        <li><span class="method">GET</span><span class="path">/metrics</span><span class="desc">Prometheus metrics</span></li>
-        <li><span class="method">GET</span><span class="path">/slow?ms=N</span><span class="desc">Simulate slow response</span></li>
-        <li><span class="method">GET</span><span class="path">/error?code=N</span><span class="desc">Simulate HTTP error</span></li>
-        <li><span class="method">GET</span><span class="path">/load?n=N</span><span class="desc">Generate CPU load</span></li>
-      </ul>
-    </div>
-
-    <div class="actions">
-      <h2>Try It</h2>
-      <div class="btn-row">
-        <button class="btn btn-green" onclick="callApi('/health')">Health Check</button>
-        <button class="btn btn-blue" onclick="callApi('/info')">App Info</button>
-        <button class="btn btn-amber" onclick="callApi('/slow?ms=500')">Slow (500ms)</button>
-        <button class="btn btn-red" onclick="callApi('/error?code=500')">Error 500</button>
-        <button class="btn btn-amber" onclick="callApi('/load?n=100000')">CPU Load</button>
-      </div>
-      <div id="result"></div>
-    </div>
+    {sections_html}
   </div>
   <div class="footer">
-    {now.strftime("%Y-%m-%d %H:%M:%S UTC")} &bull; {hostname}
+    <p>Deployed via Jenkins &bull; Managed by ArgoCD &bull; Pod: {hostname}</p>
+    <p style="margin-top:0.5rem"><a href="/health">/health</a> &bull; <a href="/info">/info</a> &bull; <a href="/metrics">/metrics</a></p>
   </div>
   <script>
-    async function callApi(path) {{{{
-      const el = document.getElementById('result');
-      el.style.display = 'block';
-      el.textContent = 'Loading...';
-      const t0 = performance.now();
-      try {{{{
-        const res = await fetch(path);
-        const dur = (performance.now() - t0).toFixed(1);
-        const traceId = res.headers.get('X-Trace-Id') || 'n/a';
-        const body = await res.text();
-        let parsed;
-        try {{{{ parsed = JSON.stringify(JSON.parse(body), null, 2); }}}} catch {{{{ parsed = body; }}}}
-        el.textContent = `HTTP ${{{{res.status}}}} | ${{{{dur}}}}ms | trace: ${{{{traceId}}}}\n\n${{{{parsed}}}}`;
-        el.style.color = res.ok ? '#a5f3fc' : '#fca5a5';
-      }}}} catch (e) {{{{
-        el.textContent = 'Error: ' + e.message;
-        el.style.color = '#fca5a5';
-      }}}}
-    }}}}
+    document.querySelectorAll('.nav a[href^="#"]').forEach(link => {{
+      link.addEventListener('click', e => {{
+        e.preventDefault();
+        const id = link.getAttribute('href').substring(1);
+        const section = document.querySelectorAll('.section')[['food','movies','clothes','cities'].indexOf(id)];
+        if (section) section.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+        document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+        link.classList.add('active');
+      }});
+    }});
   </script>
 </body>
 </html>"""

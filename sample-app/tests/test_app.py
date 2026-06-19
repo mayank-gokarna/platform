@@ -30,11 +30,14 @@ def client():
 
 
 def test_index_returns_html(client):
-    """GET / returns HTML with app name and version."""
+    """GET / returns HTML with catalog sections."""
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"Sample App" in resp.data
-    assert b"1.1.0" in resp.data
+    assert b"Platform Catalog" in resp.data
+    assert b"Food" in resp.data
+    assert b"Movies" in resp.data
+    assert b"Clothes" in resp.data
+    assert b"Cities" in resp.data
 
 
 def test_health_returns_json(client):
