@@ -8,6 +8,8 @@ pipeline {
         IMAGE_TAG      = "${env.BUILD_NUMBER}"
         FULL_IMAGE     = "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
         CLUSTER_IMAGE  = "${CLUSTER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        // Branch that ArgoCD's Application tracks (k8s/argocd-app.yaml targetRevision)
+        DEPLOY_BRANCH  = '001-jenkins-argocd-install-scripts'
     }
 
     stages {
@@ -71,12 +73,36 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                sh """
-                    # Update the deployment manifest with the new image tag (use in-cluster registry name)
-                    sed -i 's|image:.*|image: ${CLUSTER_IMAGE}|' k8s/deployment.yaml
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
-                """
+                // GitOps: commit the new image tag to Git. ArgoCD (selfHeal+automated)
+                // reconciles the cluster from Git, so it becomes the single deployer.
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-creds',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        set -e
+                        # Update the deployment manifest with the new image tag (in-cluster registry name)
+                        sed -i "s|image:.*|image: ${CLUSTER_IMAGE}|" k8s/deployment.yaml
+
+                        git config user.email "jenkins@platform.local"
+                        git config user.name "Jenkins CI"
+                        git add k8s/deployment.yaml
+
+                        if git diff --cached --quiet; then
+                            echo "No image change to commit."
+                        else
+                            git commit -m "ci: deploy ${IMAGE_NAME}:${IMAGE_TAG} [skip ci]"
+                            git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/mayank-gokarna/platform.git" \
+                                "HEAD:${DEPLOY_BRANCH}"
+                        fi
+
+                        # Optional: ask ArgoCD to sync immediately instead of waiting for poll
+                        if command -v argocd >/dev/null 2>&1 && [ -n "${ARGOCD_AUTH_TOKEN:-}" ]; then
+                            argocd app sync sample-app --grpc-web || true
+                        fi
+                    '''
+                }
             }
         }
     }
@@ -88,7 +114,7 @@ pipeline {
             }
         }
         success {
-            echo "Build ${env.BUILD_NUMBER} succeeded \u2014 image: ${FULL_IMAGE}"
+            echo "Build ${env.BUILD_NUMBER} succeeded — image: ${FULL_IMAGE}"
         }
         failure {
             echo "Build ${env.BUILD_NUMBER} failed"
