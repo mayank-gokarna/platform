@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: sample-app
-          image: kind-registry:5000/sample-app:latest
+          image: kind-registry:5000/sample-app:18
           ports:
             - containerPort: 5000
               protocol: TCP
