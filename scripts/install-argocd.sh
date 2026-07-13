@@ -182,6 +182,36 @@ install_argocd() {
 }
 
 # ============================================================================
+# Expose ArgoCD UI on the host (no kubectl port-forward needed)
+# ============================================================================
+# ArgoCD's argocd-server serves TLS, and the host nginx proxy only handles plain
+# HTTP for a few fixed ports. So we expose argocd-server via NodePort 30443 and
+# run a small TCP passthrough container that publishes host :8443 -> node :30443,
+# preserving TLS end-to-end.
+
+expose_argocd() {
+    local argocd_ns="argocd"
+    local node_port=30443
+    local host_port=8443
+    local fwd_name="argocd-ingress"
+    local node_container="${CLUSTER_NAME}-control-plane"
+
+    log_info "Exposing argocd-server via NodePort ${node_port}..."
+    kubectl -n "$argocd_ns" patch svc argocd-server --type=json -p="[
+        {\"op\":\"replace\",\"path\":\"/spec/type\",\"value\":\"NodePort\"},
+        {\"op\":\"add\",\"path\":\"/spec/ports/1/nodePort\",\"value\":${node_port}}
+    ]" 2>/dev/null || log_warn "argocd-server NodePort patch skipped (already set?)"
+
+    log_info "Starting TCP passthrough ${host_port} -> ${node_container}:${node_port}..."
+    docker rm -f "$fwd_name" 2>/dev/null || true
+    docker run -d --name "$fwd_name" --restart=always --network kind \
+        -p "${host_port}:${host_port}" alpine/socat \
+        "TCP-LISTEN:${host_port},fork,reuseaddr" "TCP:${node_container}:${node_port}"
+
+    log_info "ArgoCD UI reachable at https://localhost:${host_port} (no port-forward)"
+}
+
+# ============================================================================
 # Install ArgoCD CLI
 # ============================================================================
 
@@ -231,5 +261,6 @@ print_access_info() {
 
 create_kind_cluster
 install_argocd
+expose_argocd
 install_argocd_cli
 print_access_info
