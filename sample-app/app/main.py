@@ -17,6 +17,47 @@ logger = setup_logging()
 APP_START_TIME = time.monotonic()
 APP_START_UTC = datetime.now(timezone.utc)
 
+# Catalog of clickable UI items. Defined at module scope so it can be reused
+# both to render the page and to validate click events (bounding metric label
+# cardinality to known values).
+CATALOG = {
+    "Food": [
+        {"name": "Pizza", "emoji": "\U0001F35F", "color": "#dc2621"},
+        {"name": "Sushi", "emoji": "\U0001F363", "color": "#0891b2"},
+        {"name": "Burger", "emoji": "\U0001F354", "color": "#d97706"},
+        {"name": "Pasta", "emoji": "\U0001F35D", "color": "#ca8a04"},
+        {"name": "Tacos", "emoji": "\U0001F32E", "color": "#16a34a"},
+        {"name": "Ice Cream", "emoji": "\U0001F366", "color": "#db2777"},
+    ],
+    "Movies": [
+        {"name": "Action", "emoji": "\U0001F4A5", "color": "#dc2626"},
+        {"name": "Comedy", "emoji": "\U0001F602", "color": "#f59e0b"},
+        {"name": "Sci-Fi", "emoji": "\U0001F680", "color": "#6366f1"},
+        {"name": "Horror", "emoji": "\U0001F47B", "color": "#1e293b"},
+        {"name": "Drama", "emoji": "\U0001F3AD", "color": "#7c3aed"},
+        {"name": "Animation", "emoji": "\U0001F3AC", "color": "#0ea5e9"},
+    ],
+    "Clothes": [
+        {"name": "Jackets", "emoji": "\U0001F9E5", "color": "#78350f"},
+        {"name": "Sneakers", "emoji": "\U0001F45F", "color": "#059669"},
+        {"name": "Dresses", "emoji": "\U0001F457", "color": "#e11d48"},
+        {"name": "Jeans", "emoji": "\U0001F456", "color": "#1d4ed8"},
+        {"name": "T-Shirts", "emoji": "\U0001F455", "color": "#0d9488"},
+        {"name": "Suits", "emoji": "\U0001F935", "color": "#334155"},
+    ],
+    "Cities": [
+        {"name": "Tokyo", "emoji": "\U0001F5FC", "color": "#dc2626"},
+        {"name": "Paris", "emoji": "\U0001F5FC", "color": "#7c3aed"},
+        {"name": "New York", "emoji": "\U0001F5FD", "color": "#059669"},
+        {"name": "London", "emoji": "\U0001F3A1", "color": "#1d4ed8"},
+        {"name": "Dubai", "emoji": "\U0001F3D9\uFE0F", "color": "#d97706"},
+        {"name": "Sydney", "emoji": "\U0001F309", "color": "#0891b2"},
+    ],
+}
+
+# Set of valid (section, item) pairs for validating click events.
+VALID_CLICKS = {(section, item["name"]) for section, items in CATALOG.items() for item in items}
+
 
 def create_app() -> Flask:
     """Create and configure the Flask application."""
@@ -50,8 +91,29 @@ def create_app() -> Flask:
         @application.route("/metrics")
         def metrics():
             return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+        BUTTON_CLICKS = Counter('ui_button_clicks_total', 'Total UI button/card clicks', ['section', 'item'])
+
+        @application.route("/api/click", methods=["POST"])
+        def track_click():
+            """Record a UI click as a Prometheus metric.
+
+            Only known (section, item) pairs are counted to keep label
+            cardinality bounded and prevent metric-label injection.
+            """
+            data = request.get_json(silent=True) or {}
+            section = str(data.get("section", ""))
+            item = str(data.get("item", ""))
+            if (section, item) not in VALID_CLICKS:
+                return jsonify({"error": "unknown item"}), 400
+            BUTTON_CLICKS.labels(section, item).inc()
+            return "", 204
     except ImportError:
         logger.warning("prometheus-client not installed, /metrics disabled")
+
+        @application.route("/api/click", methods=["POST"])
+        def track_click():
+            return "", 204
 
     @application.before_request
     def _before_request():
@@ -88,47 +150,14 @@ def create_app() -> Flask:
         """Catalog landing page with sections."""
         hostname = os.environ.get("HOSTNAME", platform.node())
 
-        catalog = {
-            "Food": [
-                {"name": "Pizza", "emoji": "\U0001f9e5", "color": "#dc2621"},
-                {"name": "Sushi", "emoji": "\U0001f363", "color": "#0891b2"},
-                {"name": "Burger", "emoji": "\U0001f354", "color": "#d97706"},
-                {"name": "Pasta", "emoji": "\U0001f35d", "color": "#ca8a04"},
-                {"name": "Tacos", "emoji": "\U0001f32e", "color": "#16a34a"},
-                {"name": "Ice Cream", "emoji": "\U0001f366", "color": "#db2777"},
-            ],
-            "Movies": [
-                {"name": "Action", "emoji": "\U0001f4a5", "color": "#dc2626"},
-                {"name": "Comedy", "emoji": "\U0001f602", "color": "#f59e0b"},
-                {"name": "Sci-Fi", "emoji": "\U0001f680", "color": "#6366f1"},
-                {"name": "Horror", "emoji": "\U0001f47b", "color": "#1e293b"},
-                {"name": "Drama", "emoji": "\U0001f3ad", "color": "#7c3aed"},
-                {"name": "Animation", "emoji": "\U0001f3ac", "color": "#0ea5e9"},
-            ],
-            "Clothes": [
-                {"name": "Jackets", "emoji": "\U0001f9e5", "color": "#78350f"},
-                {"name": "Sneakers", "emoji": "\U0001f45f", "color": "#059669"},
-                {"name": "Dresses", "emoji": "\U0001f457", "color": "#e11d48"},
-                {"name": "Jeans", "emoji": "\U0001f456", "color": "#1d4ed8"},
-                {"name": "T-Shirts", "emoji": "\U0001f455", "color": "#0d9488"},
-                {"name": "Suits", "emoji": "\U0001f935", "color": "#334155"},
-            ],
-            "Cities": [
-                {"name": "Tokyo", "emoji": "\U0001f5fc", "color": "#dc2626"},
-                {"name": "Paris", "emoji": "\U0001f5fc", "color": "#7c3aed"},
-                {"name": "New York", "emoji": "\U0001f5fd", "color": "#059669"},
-                {"name": "London", "emoji": "\U0001f3a1", "color": "#1d4ed8"},
-                {"name": "Dubai", "emoji": "\U0001f3d9\ufe0f", "color": "#d97706"},
-                {"name": "Sydney", "emoji": "\U0001f309", "color": "#0891b2"},
-            ],
-        }
+        catalog = CATALOG
 
         sections_html = ""
         for section, items in catalog.items():
             cards_html = ""
             for item in items:
                 cards_html += f'''
-              <div class="catalog-card">
+              <div class="catalog-card" data-section="{section}" data-item="{item['name']}">
                 <div class="catalog-card-img" style="background:{item['color']}">{item['emoji']}</div>
                 <div class="catalog-card-name">{item['name']}</div>
               </div>'''
@@ -195,6 +224,14 @@ def create_app() -> Flask:
         document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
         link.classList.add('active');
       }});
+    }});    document.querySelectorAll('.catalog-card').forEach(card => {{
+        card.addEventListener('click', () => {{
+        fetch('/api/click', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ section: card.dataset.section, item: card.dataset.item }})
+        }});
+        }});
     }});
   </script>
 </body>
