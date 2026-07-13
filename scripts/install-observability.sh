@@ -114,20 +114,32 @@ install_grafana() {
     helm repo update
 
     log_info "Installing Grafana..."
+    # persistence.enabled=true: back Grafana's /var/lib/grafana with a PVC so
+    #   dashboards survive pod restarts (an emptyDir is wiped on every restart).
+    # deploymentStrategy=Recreate: required with a ReadWriteOnce PVC so a rollout
+    #   doesn't deadlock (new pod can't mount the volume while the old one holds it).
+    # datasource url has a trailing dot (absolute FQDN) so the pod's resolv.conf
+    #   search list (ndots:5) isn't walked — otherwise queries can take ~8s.
+    # disable_brute_force_login_protection: dev convenience to avoid admin lockout.
     helm install grafana grafana/grafana \
         --namespace "$NAMESPACE" \
-        --set persistence.enabled=false \
+        --set persistence.enabled=true \
+        --set persistence.type=pvc \
+        --set persistence.storageClassName=standard \
+        --set persistence.size=2Gi \
+        --set deploymentStrategy.type=Recreate \
         --set adminUser=admin \
-        --set adminPassword=admin \
+        --set adminPassword=admin123 \
+        --set "grafana\\.ini.security.disable_brute_force_login_protection=true" \
         --set "datasources.datasources\\.yaml.apiVersion=1" \
         --set "datasources.datasources\\.yaml.datasources[0].name=Prometheus" \
         --set "datasources.datasources\\.yaml.datasources[0].type=prometheus" \
-        --set "datasources.datasources\\.yaml.datasources[0].url=http://prometheus-server.${NAMESPACE}.svc.cluster.local" \
+        --set "datasources.datasources\\.yaml.datasources[0].url=http://prometheus-server.${NAMESPACE}.svc.cluster.local." \
         --set "datasources.datasources\\.yaml.datasources[0].access=proxy" \
         --set "datasources.datasources\\.yaml.datasources[0].isDefault=true" \
         --wait --timeout 300s
 
-    log_info "Grafana installed (admin/admin)"
+    log_info "Grafana installed (admin/admin123, persistent storage)"
 }
 
 # ============================================================================
@@ -170,4 +182,4 @@ provision_dashboard
 log_info "Observability stack installed in namespace '$NAMESPACE'"
 log_info "Access Prometheus: kubectl port-forward -n $NAMESPACE svc/prometheus-server 9090:80"
 log_info "Access Grafana:    kubectl port-forward -n $NAMESPACE svc/grafana 3000:80"
-log_info "Grafana credentials: admin / admin"
+log_info "Grafana credentials: admin / admin123"
