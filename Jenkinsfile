@@ -47,7 +47,10 @@ pipeline {
         stage('Build Image') {
             steps {
                 dir('sample-app') {
-                    sh "docker build -t ${FULL_IMAGE} ."
+                    // Retry to ride out transient Docker Hub pull/TLS timeouts.
+                    retry(3) {
+                        sh "docker build -t ${FULL_IMAGE} ."
+                    }
                 }
             }
         }
