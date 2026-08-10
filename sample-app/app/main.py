@@ -63,6 +63,11 @@ def create_app() -> Flask:
     """Create and configure the Flask application."""
     application = Flask(__name__)
 
+    # Metric handles that routes reference. Initialized to None so the routes
+    # stay functional even if prometheus-client is unavailable (except branch).
+    PAGE_VIEWS = None
+    PAGE_VIEW_TS = None
+
     # Prometheus metrics instrumentation
     try:
         from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -70,7 +75,7 @@ def create_app() -> Flask:
         REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency',
                                     ['method', 'endpoint'],
                                     buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0])
-        REQUESTS_IN_PROGRESS = Gauge('http_requests_in_progress', 'Requests currently being processed')
+        REQUESTS_IN_PROGRESS = Gauge('http_requests_in_progress', 'Requests currently being processed', multiprocess_mode='livesum')
         ERROR_COUNT = Counter('http_errors_total', 'Total HTTP errors', ['method', 'endpoint', 'error_type'])
 
         @application.before_request
@@ -90,9 +95,26 @@ def create_app() -> Flask:
 
         @application.route("/metrics")
         def metrics():
+            # When running under gunicorn with multiple workers, collect from the
+            # shared multiprocess directory so metrics aggregate across workers.
+            if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+                from prometheus_client import CollectorRegistry, multiprocess
+                registry = CollectorRegistry()
+                multiprocess.MultiProcessCollector(registry)
+                return generate_latest(registry), 200, {'Content-Type': CONTENT_TYPE_LATEST}
             return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
         BUTTON_CLICKS = Counter('ui_button_clicks_total', 'Total UI button/card clicks', ['section', 'item'])
+
+        # Page views from real browsers hitting a rendered HTML page, kept
+        # separate from http_requests_total so probe/scrape traffic doesn't
+        # inflate the count. Label cardinality is bounded to known pages.
+        PAGE_VIEWS = Counter('sample_app_page_views_total', 'Catalog page views from the browser', ['page'])
+
+        # Unix time (seconds) of the most recent browser page view, so a
+        # dashboard can show WHEN the endpoint was last hit. 'max' aggregation
+        # reports the latest hit time across all gunicorn workers.
+        PAGE_VIEW_TS = Gauge('sample_app_last_page_view_timestamp_seconds', 'Unix time of the most recent catalog page view', multiprocess_mode='max')
 
         @application.route("/api/click", methods=["POST"])
         def track_click():
@@ -148,6 +170,9 @@ def create_app() -> Flask:
     @application.route("/")
     def index():
         """Catalog landing page with sections."""
+        if PAGE_VIEWS is not None:
+            PAGE_VIEWS.labels("catalog").inc()
+            PAGE_VIEW_TS.set(time.time())
         hostname = os.environ.get("HOSTNAME", platform.node())
 
         catalog = CATALOG

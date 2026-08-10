@@ -130,6 +130,13 @@ install_grafana() {
         --set deploymentStrategy.type=Recreate \
         --set adminUser=admin \
         --set adminPassword=admin123 \
+        --set service.type=NodePort \
+        --set service.nodePort=30030 \
+        --set sidecar.dashboards.enabled=true \
+        --set sidecar.dashboards.label=grafana_dashboard \
+        --set sidecar.dashboards.labelValue=1 \
+        --set sidecar.dashboards.folderAnnotation=grafana_folder \
+        --set sidecar.dashboards.searchNamespace=ALL \
         --set "grafana\\.ini.security.disable_brute_force_login_protection=true" \
         --set "datasources.datasources\\.yaml.apiVersion=1" \
         --set "datasources.datasources\\.yaml.datasources[0].name=Prometheus" \
