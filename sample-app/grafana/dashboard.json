@@ -181,12 +181,12 @@
       }
     },
     {
-      "title": "Cart Additions by Item",
+      "title": "Items Currently in Cart by Item",
       "type": "barchart",
       "gridPos": { "h": 8, "w": 16, "x": 0, "y": 32 },
       "targets": [
         {
-          "expr": "sum by (section, item) (sample_app_cart_items_added_total{app=\"sample-app\"})",
+          "expr": "clamp_min(sum by (section, item) (sample_app_cart_items_added_total{app=\"sample-app\"}) - sum by (section, item) (sample_app_cart_items_removed_total{app=\"sample-app\"}), 0)",
           "legendFormat": "{{section}} / {{item}}",
           "refId": "A"
         }
@@ -194,7 +194,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "noValue": "No items added to cart yet"
+          "noValue": "Cart is empty"
         }
       },
       "options": {
@@ -202,12 +202,12 @@
       }
     },
     {
-      "title": "Total Items in Cart",
+      "title": "Current Items in Cart",
       "type": "stat",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
       "targets": [
         {
-          "expr": "sum(sample_app_cart_items_added_total{app=\"sample-app\"})",
+          "expr": "clamp_min(sum(sample_app_cart_items_added_total{app=\"sample-app\"}) - sum(sample_app_cart_items_removed_total{app=\"sample-app\"}), 0)",
           "legendFormat": "items",
           "refId": "A"
         }
@@ -234,6 +234,6 @@
   "timezone": "utc",
   "title": "Sample App Dashboard",
   "uid": "sample-app-dashboard",
-  "version": 4
+  "version": 5
 }
 

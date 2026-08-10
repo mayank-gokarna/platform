@@ -120,6 +120,11 @@ def create_app() -> Flask:
         # to known (section, item) pairs.
         CART_ITEMS = Counter('sample_app_cart_items_added_total', 'Items added to the cart', ['section', 'item'])
 
+        # Items removed from the cart. Current cart size is derived as
+        # added - removed, which aggregates correctly across pods/workers
+        # (an in-memory gauge would split-brain across replicas).
+        CART_REMOVED = Counter('sample_app_cart_items_removed_total', 'Items removed from the cart', ['section', 'item'])
+
         @application.route("/api/click", methods=["POST"])
         def track_click():
             """Record a UI click as a Prometheus metric.
@@ -149,6 +154,17 @@ def create_app() -> Flask:
                 return jsonify({"error": "unknown item"}), 400
             CART_ITEMS.labels(section, item).inc()
             return jsonify({"status": "added", "section": section, "item": item}), 200
+
+        @application.route("/api/cart/remove", methods=["POST"])
+        def remove_from_cart():
+            """Record a remove-from-cart event; decrements current cart size."""
+            data = request.get_json(silent=True) or {}
+            section = str(data.get("section", ""))
+            item = str(data.get("item", ""))
+            if (section, item) not in VALID_CLICKS:
+                return jsonify({"error": "unknown item"}), 400
+            CART_REMOVED.labels(section, item).inc()
+            return jsonify({"status": "removed", "section": section, "item": item}), 200
     except ImportError:
         logger.warning("prometheus-client not installed, /metrics disabled")
 
@@ -158,6 +174,10 @@ def create_app() -> Flask:
 
         @application.route("/api/cart/add", methods=["POST"])
         def add_to_cart():
+            return "", 204
+
+        @application.route("/api/cart/remove", methods=["POST"])
+        def remove_from_cart():
             return "", 204
 
     @application.before_request
@@ -244,6 +264,8 @@ def create_app() -> Flask:
     .footer a {{ color: #3b82f6; text-decoration: none; }}
     .header-top {{ display: flex; justify-content: space-between; align-items: center; }}
     .cart-badge {{ background: #3b82f6; color: #fff; padding: 0.45rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.9rem; white-space: nowrap; }}
+    .cart-remove-btn {{ background: rgba(255,255,255,0.25); color: #fff; border: none; border-radius: 50%; width: 1.35rem; height: 1.35rem; font-size: 1.1rem; line-height: 1; cursor: pointer; margin-left: 0.4rem; vertical-align: middle; }}
+    .cart-remove-btn:hover {{ background: rgba(255,255,255,0.45); }}
     .add-cart-btn {{ width: 100%; border: none; background: #3b82f6; color: #fff; padding: 0.55rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border-top: 1px solid #334155; transition: background 0.2s; }}
     .add-cart-btn:hover {{ background: #2563eb; }}
     .toast {{ position: fixed; bottom: 1.5rem; right: 1.5rem; background: #16a34a; color: #fff; padding: 0.8rem 1.2rem; border-radius: 8px; opacity: 0; transform: translateY(10px); transition: opacity 0.3s, transform 0.3s; z-index: 200; pointer-events: none; }}
@@ -254,7 +276,7 @@ def create_app() -> Flask:
   <div class="header">
     <div class="header-top">
       <div><h1>&#128722; Platform Catalog</h1><span class="version">v{__version__}</span></div>
-      <div class="cart-badge">&#128722; Cart: <span id="cart-count">0</span></div>
+      <div class="cart-badge">&#128722; Cart: <span id="cart-count">0</span> <button id="cart-remove" class="cart-remove-btn" title="Remove last item from cart">&minus;</button></div>
     </div>
     <div class="nav">
       <a href="#food" class="active">Food</a>
@@ -292,8 +314,10 @@ def create_app() -> Flask:
         }});
         }});
     }});
-    let cartCount = 0;
+    const cart = [];
     const toast = document.getElementById('toast');
+    const cartCountEl = document.getElementById('cart-count');
+    function renderCart() {{ cartCountEl.textContent = cart.length; }}
     function showToast(msg) {{
       toast.textContent = msg;
       toast.classList.add('show');
@@ -302,17 +326,30 @@ def create_app() -> Flask:
     document.querySelectorAll('.add-cart-btn').forEach(btn => {{
       btn.addEventListener('click', e => {{
         e.stopPropagation();
+        const entry = {{ section: btn.dataset.section, item: btn.dataset.item }};
         fetch('/api/cart/add', {{
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ section: btn.dataset.section, item: btn.dataset.item }})
+          body: JSON.stringify(entry)
         }}).then(r => {{
           if (r.ok) {{
-            cartCount++;
-            document.getElementById('cart-count').textContent = cartCount;
-            showToast(btn.dataset.item + ' added to cart');
+            cart.push(entry);
+            renderCart();
+            showToast(entry.item + ' added to cart');
           }}
         }});
+      }});
+    }});
+    document.getElementById('cart-remove').addEventListener('click', () => {{
+      const entry = cart.pop();
+      if (!entry) {{ showToast('Cart is empty'); return; }}
+      fetch('/api/cart/remove', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify(entry)
+      }}).then(r => {{
+        if (r.ok) {{ renderCart(); showToast(entry.item + ' removed from cart'); }}
+        else {{ cart.push(entry); }}
       }});
     }});
   </script>
