@@ -116,6 +116,10 @@ def create_app() -> Flask:
         # reports the latest hit time across all gunicorn workers.
         PAGE_VIEW_TS = Gauge('sample_app_last_page_view_timestamp_seconds', 'Unix time of the most recent catalog page view', multiprocess_mode='max')
 
+        # Items added to the cart, per catalog item. Label cardinality is bounded
+        # to known (section, item) pairs.
+        CART_ITEMS = Counter('sample_app_cart_items_added_total', 'Items added to the cart', ['section', 'item'])
+
         @application.route("/api/click", methods=["POST"])
         def track_click():
             """Record a UI click as a Prometheus metric.
@@ -130,11 +134,30 @@ def create_app() -> Flask:
                 return jsonify({"error": "unknown item"}), 400
             BUTTON_CLICKS.labels(section, item).inc()
             return "", 204
+
+        @application.route("/api/cart/add", methods=["POST"])
+        def add_to_cart():
+            """Record an add-to-cart event as a Prometheus metric.
+
+            Only known (section, item) pairs are counted to keep label
+            cardinality bounded and prevent metric-label injection.
+            """
+            data = request.get_json(silent=True) or {}
+            section = str(data.get("section", ""))
+            item = str(data.get("item", ""))
+            if (section, item) not in VALID_CLICKS:
+                return jsonify({"error": "unknown item"}), 400
+            CART_ITEMS.labels(section, item).inc()
+            return jsonify({"status": "added", "section": section, "item": item}), 200
     except ImportError:
         logger.warning("prometheus-client not installed, /metrics disabled")
 
         @application.route("/api/click", methods=["POST"])
         def track_click():
+            return "", 204
+
+        @application.route("/api/cart/add", methods=["POST"])
+        def add_to_cart():
             return "", 204
 
     @application.before_request
@@ -185,6 +208,7 @@ def create_app() -> Flask:
               <div class="catalog-card" data-section="{section}" data-item="{item['name']}">
                 <div class="catalog-card-img" style="background:{item['color']}">{item['emoji']}</div>
                 <div class="catalog-card-name">{item['name']}</div>
+                <button class="add-cart-btn" data-section="{section}" data-item="{item['name']}">&#128722; Add to Cart</button>
               </div>'''
             sections_html += f'''
         <div class="section">
@@ -218,11 +242,20 @@ def create_app() -> Flask:
     .catalog-card-name {{ padding: 0.7rem; font-size: 0.9rem; font-weight: 500; text-align: center; color: #cbd5e1; }}
     .footer {{ text-align: center; padding: 2rem; color: #475569; font-size: 0.8rem; border-top: 1px solid #1e293b; }}
     .footer a {{ color: #3b82f6; text-decoration: none; }}
+    .header-top {{ display: flex; justify-content: space-between; align-items: center; }}
+    .cart-badge {{ background: #3b82f6; color: #fff; padding: 0.45rem 1rem; border-radius: 20px; font-weight: 600; font-size: 0.9rem; white-space: nowrap; }}
+    .add-cart-btn {{ width: 100%; border: none; background: #3b82f6; color: #fff; padding: 0.55rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border-top: 1px solid #334155; transition: background 0.2s; }}
+    .add-cart-btn:hover {{ background: #2563eb; }}
+    .toast {{ position: fixed; bottom: 1.5rem; right: 1.5rem; background: #16a34a; color: #fff; padding: 0.8rem 1.2rem; border-radius: 8px; opacity: 0; transform: translateY(10px); transition: opacity 0.3s, transform 0.3s; z-index: 200; pointer-events: none; }}
+    .toast.show {{ opacity: 1; transform: translateY(0); }}
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>&#128722; Platform Catalog</h1><span class="version">v{__version__}</span>
+    <div class="header-top">
+      <div><h1>&#128722; Platform Catalog</h1><span class="version">v{__version__}</span></div>
+      <div class="cart-badge">&#128722; Cart: <span id="cart-count">0</span></div>
+    </div>
     <div class="nav">
       <a href="#food" class="active">Food</a>
       <a href="#movies">Movies</a>
@@ -239,6 +272,7 @@ def create_app() -> Flask:
     <p>Deployed via Jenkins &bull; Managed by ArgoCD &bull; Pod: {hostname}</p>
     <p style="margin-top:0.5rem"><a href="/health">/health</a> &bull; <a href="/info">/info</a> &bull; <a href="/metrics">/metrics</a></p>
   </div>
+  <div id="toast" class="toast"></div>
   <script>
     document.querySelectorAll('.nav a[href^="#"]').forEach(link => {{
       link.addEventListener('click', e => {{
@@ -257,6 +291,29 @@ def create_app() -> Flask:
             body: JSON.stringify({{ section: card.dataset.section, item: card.dataset.item }})
         }});
         }});
+    }});
+    let cartCount = 0;
+    const toast = document.getElementById('toast');
+    function showToast(msg) {{
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1600);
+    }}
+    document.querySelectorAll('.add-cart-btn').forEach(btn => {{
+      btn.addEventListener('click', e => {{
+        e.stopPropagation();
+        fetch('/api/cart/add', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ section: btn.dataset.section, item: btn.dataset.item }})
+        }}).then(r => {{
+          if (r.ok) {{
+            cartCount++;
+            document.getElementById('cart-count').textContent = cartCount;
+            showToast(btn.dataset.item + ' added to cart');
+          }}
+        }});
+      }});
     }});
   </script>
 </body>

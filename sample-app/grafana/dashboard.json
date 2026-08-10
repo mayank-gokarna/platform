@@ -179,6 +179,51 @@
         "textMode": "value",
         "colorMode": "none"
       }
+    },
+    {
+      "title": "Cart Additions by Item",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum by (section, item) (sample_app_cart_items_added_total{app=\"sample-app\"})",
+          "legendFormat": "{{section}} / {{item}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No items added to cart yet"
+        }
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "title": "Total Items in Cart",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "targets": [
+        {
+          "expr": "sum(sample_app_cart_items_added_total{app=\"sample-app\"})",
+          "legendFormat": "items",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "noValue": "0"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value",
+        "colorMode": "value"
+      }
     }
   ],
   "schemaVersion": 39,
@@ -189,5 +234,6 @@
   "timezone": "utc",
   "title": "Sample App Dashboard",
   "uid": "sample-app-dashboard",
-  "version": 3
+  "version": 4
 }
+
